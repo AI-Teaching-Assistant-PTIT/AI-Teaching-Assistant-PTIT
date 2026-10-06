@@ -1,0 +1,21 @@
+# Repo gốc chỉ gom các repo con dưới dạng submodule (config, kubernetes, web)
+# và track con trỏ commit của chúng, không track code bên trong.
+
+# Secret / biến môi trường cục bộ
+.env
+.env.*
+!.env.example
+
+# Toolchain dùng chung cho migration: uv, git-filter-repo.
+# Cài trong venv thay vì global để không đụng Python hệ thống.
+.tools/
+
+# Cấu hình AI agent cục bộ (Claude Code, skills)
+.claude/
+.agents/
+
+# Editor / OS
+.vscode/
+.idea/
+*.swp
+.DS_Store

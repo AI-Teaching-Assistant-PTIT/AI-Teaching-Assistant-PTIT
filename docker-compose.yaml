@@ -1,0 +1,355 @@
+# Ghim tên project. Mặc định Compose lấy tên thư mục chứa file này, nên khi thư mục
+# được đổi tên (platform -> kubernetes) toàn bộ named volume sẽ đổi tiền tố và stack
+# khởi động với dữ liệu RỖNG. Ghim ở đây để volume luôn là platform_* dù đổi thư mục.
+name: platform
+
+services:
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    container_name: cloudflared
+    restart: unless-stopped
+    command: tunnel --no-autoupdate run --token ${CLOUDFLARE_TUNNEL_TOKEN}
+    environment:
+      - TZ=Asia/Ho_Chi_Minh
+    depends_on:
+      - gitptit
+    networks:
+      - platform_net
+  gitptit:
+    build: ./gitptit
+    image: ghcr.io/ai-teaching-assistant-ptit/gitptit:latest
+    container_name: gitptit
+    restart: unless-stopped
+    depends_on:
+      - postgres
+    environment:
+      # Chỉ các giá trị theo môi trường; phần còn lại là ENV trong gitptit/Dockerfile.
+      - GITEA__server__DOMAIN
+      - GITEA__server__ROOT_URL
+      - GITEA__server__SSH_DOMAIN
+      - GITEA__database__HOST
+      - GITEA__database__NAME
+      - GITEA__database__USER
+      - GITEA__database__PASSWD
+      - GITEA__database__SSL_MODE
+      - GITEA_ADMIN_USERNAME
+      - GITEA_ADMIN_PASSWORD
+      - GITEA_ADMIN_EMAIL
+      - SSO_CLIENT_ID
+      - SSO_SECRET
+      - SSO_DIRECTORY_ID
+    volumes:
+      - gitptit_data:/data
+      - /etc/timezone:/etc/timezone:ro
+      - /etc/localtime:/etc/localtime:ro
+    ports:
+      - "3000:3000"
+      - "2222:22"
+    networks:
+      - platform_net
+
+  postgres:
+    image: pgvector/pgvector:pg15
+    container_name: postgres
+    environment:
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - POSTGRES_DB
+      - WEBAPP_DB
+      - TZ=Asia/Ho_Chi_Minh
+    restart: always
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $$POSTGRES_USER -d $$POSTGRES_DB"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+    networks:
+      - platform_net
+  minio:
+    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    container_name: minio
+    restart: unless-stopped
+    command: server /data --console-address ":9001"
+    environment:
+      - MINIO_ROOT_USER=${S3_ACCESS_KEY}
+      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY}
+      - TZ=Asia/Ho_Chi_Minh
+    volumes:
+      - minio_data:/data
+    ports:
+      - "9000:9000" # S3 API
+      - "9001:9001" # Web Console
+    networks:
+      - platform_net
+    healthcheck:
+      test: ["CMD", "mc", "ready", "local"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 20s
+
+  docling:
+    container_name: docling
+    image: quay.io/docling-project/docling-serve-cpu:v1.27.0
+    restart: always
+    environment:
+      - DOCLING_SERVE_ENABLE_UI=1
+      - DOCLING_DEVICE=cpu
+      - DOCLING_SERVE_ENG_LOC_NUM_WORKERS=1
+      - TZ=Asia/Ho_Chi_Minh
+    volumes:
+      - app-docling-cache:/opt/app-root/src/.cache
+    healthcheck:
+      test: [ "CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:5001/health')" ]
+      interval: 15s
+      timeout: 10s
+      retries: 20
+      start_period: 60s
+    networks:
+      - platform_net
+
+  embedding:
+    container_name: embedding
+    image: ghcr.io/ai-teaching-assistant-ptit/embedding:2026-09-04T13-54-23-VN
+    restart: always
+    environment:
+      - MODEL_NAME=sentence-transformers/all-MiniLM-L6-v2
+      - EMBEDDING_DEVICE=cpu
+      - TZ=Asia/Ho_Chi_Minh
+    healthcheck:
+      test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8000/health')"]
+      interval: 10s
+      timeout: 5s
+      retries: 12
+      start_period: 30s
+    networks:
+      - platform_net
+
+  db-init:
+    container_name: db-init
+    image: pgvector/pgvector:pg15
+    restart: "no"
+    depends_on:
+      postgres:
+        condition: service_healthy
+    networks:
+      - platform_net
+    environment:
+      POSTGRES_SERVER: postgres
+      POSTGRES_PORT: 5432
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+      WEBAPP_DB: ${WEBAPP_DB}
+    entrypoint: ["/bin/sh", "-c"]
+    command:
+      - >-
+        until pg_isready -h "$$POSTGRES_SERVER" -p "$$POSTGRES_PORT" -U "$$POSTGRES_USER"; do sleep 2; done;
+        if ! PGPASSWORD="$$POSTGRES_PASSWORD" psql -h "$$POSTGRES_SERVER" -p "$$POSTGRES_PORT" -U "$$POSTGRES_USER" -d "$$POSTGRES_DB" -tAc "SELECT 1 FROM pg_database WHERE datname = '$$WEBAPP_DB'" | grep -q 1;
+        then PGPASSWORD="$$POSTGRES_PASSWORD" createdb -h "$$POSTGRES_SERVER" -p "$$POSTGRES_PORT" -U "$$POSTGRES_USER" -O "$$POSTGRES_USER" "$$WEBAPP_DB";
+        fi
+
+  prestart:
+    container_name: prestart
+    image: ghcr.io/ai-teaching-assistant-ptit/backend:pr-31
+    restart: "no"
+    networks:
+      - platform_net
+    depends_on:
+      db-init:
+        condition: service_completed_successfully
+    command: bash scripts/prestart.sh
+    environment:
+      - DOMAIN
+      - FRONTEND_HOST
+      - ENVIRONMENT
+      - BACKEND_CORS_ORIGINS
+      - SECRET_KEY
+      - FIRST_SUPERUSER
+      - FIRST_SUPERUSER_PASSWORD
+      - PROJECT_NAME
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${WEBAPP_DB}
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+    env_file:
+      - .env
+
+  api:
+    container_name: api
+    image: ghcr.io/ai-teaching-assistant-ptit/backend:pr-31
+    restart: always
+    networks:
+      - platform_net
+    depends_on:
+      prestart:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+      gitptit:
+        condition: service_started
+    environment:
+      - DOMAIN
+      - FRONTEND_HOST
+      - ENVIRONMENT
+      - BACKEND_CORS_ORIGINS
+      - SECRET_KEY
+      - FIRST_SUPERUSER
+      - FIRST_SUPERUSER_PASSWORD
+      - PROJECT_NAME
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${WEBAPP_DB}
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - MINIO_ENDPOINT=minio:9000
+      - MINIO_ACCESS_KEY=${S3_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${S3_SECRET_KEY}
+      - MINIO_BUCKET=course-knowledge
+      - MINIO_SECURE=false
+      - DOCLING_API_URL=http://docling:5001
+      - DOCLING_TIMEOUT_SECONDS=3600
+      - NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1
+      - EMBEDDING_API_BASE_URL=http://embedding:8000/v1
+      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - EMBEDDING_DIMENSIONS=384
+      - GITEA_BASE_URL
+      - GITEA_PUBLIC_URL
+      - GITEA_TOKEN
+      - GITEA_ORG
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 20s
+
+  knowledge-worker:
+    container_name: knowledge-worker
+    image: ghcr.io/ai-teaching-assistant-ptit/backend:pr-31
+    restart: always
+    command: python -m app.knowledge.worker
+    networks:
+      - platform_net
+    depends_on:
+      postgres:
+        condition: service_started
+      prestart:
+        condition: service_completed_successfully
+      minio:
+        condition: service_healthy
+      docling:
+        condition: service_healthy
+      embedding:
+        condition: service_healthy
+    environment:
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${WEBAPP_DB}
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - MINIO_ENDPOINT=minio:9000
+      - PROJECT_NAME
+      - MINIO_ACCESS_KEY=${S3_ACCESS_KEY}
+      - MINIO_SECRET_KEY=${S3_SECRET_KEY}
+      - MINIO_BUCKET=course-knowledge
+      - MINIO_SECURE=false
+      - DOCLING_API_URL=http://docling:5001
+      - DOCLING_TIMEOUT_SECONDS=3600
+      - NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1
+      - EMBEDDING_API_BASE_URL=http://embedding:8000/v1
+      - EMBEDDING_MODEL=sentence-transformers/all-MiniLM-L6-v2
+      - EMBEDDING_DIMENSIONS=384
+    env_file:
+      - .env
+
+  code-intelligence-worker:
+    container_name: code-intelligence-worker
+    image: ghcr.io/ai-teaching-assistant-ptit/backend:pr-31
+    restart: always
+    command: python -m app.code_intelligence.worker
+    networks:
+      - platform_net
+    depends_on:
+      prestart:
+        condition: service_completed_successfully
+      gitptit:
+        condition: service_started
+    environment:
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${WEBAPP_DB}
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - GITEA_BASE_URL
+      - GITEA_PUBLIC_URL
+      - GITEA_TOKEN
+      - GITEA_ORG
+      - GITEA_TIMEOUT_SECONDS=20
+    env_file:
+      - .env
+
+  defense-worker:
+    container_name: defense-worker
+    image: ghcr.io/ai-teaching-assistant-ptit/backend:pr-31
+    restart: always
+    command: python -m app.defense.worker
+    networks:
+      - platform_net
+    depends_on:
+      prestart:
+        condition: service_completed_successfully
+    environment:
+      - POSTGRES_SERVER=postgres
+      - POSTGRES_PORT=5432
+      - POSTGRES_DB=${WEBAPP_DB}
+      - POSTGRES_USER
+      - POSTGRES_PASSWORD
+      - PROJECT_NAME
+      - AI_DEFENSE_ENABLED=${AI_DEFENSE_ENABLED:-false}
+      - DEFENSE_WORKER_POLL_SECONDS=3
+      - DEFENSE_SWEEP_SECONDS=15
+      - NVIDIA_API_BASE_URL=https://integrate.api.nvidia.com/v1
+    env_file:
+      - .env
+
+  frontend:
+    container_name: frontend
+    image: ghcr.io/ai-teaching-assistant-ptit/frontend:2026-10-05T06-53-18-VN
+    restart: always
+    depends_on:
+      api:
+        condition: service_healthy
+    networks:
+      - platform_net
+    ports:
+      - "80:80"
+    volumes:
+      - ./frontend/nginx-extra.conf:/etc/nginx/extra-conf.d/api.conf:ro
+    healthcheck:
+      test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/"]
+      interval: 10s
+      timeout: 5s
+      retries: 10
+      start_period: 10s
+
+volumes:
+  gitptit_data:
+  postgres_data:
+  minio_data:
+  app-docling-cache:
+
+networks:
+  platform_net:
+    driver: bridge
