@@ -9,7 +9,7 @@ Repo này không chứa code. Nó gom các repo thành phần dưới dạng **g
 | Thư mục | Repo | Vai trò |
 |---|---|---|
 | [`web/`](web/) | [codebase-platform](https://github.com/AI-Teaching-Assistant-PTIT/codebase-platform) | Webapp PBL: backend FastAPI, các worker (knowledge, code-intelligence, defense), frontend, embedding service |
-| [`kubernetes/`](kubernetes/) | [git-platform](https://github.com/AI-Teaching-Assistant-PTIT/git-platform) | Hạ tầng: GitPTIT (Gitea tùy biến + Microsoft SSO), PostgreSQL/pgvector, MinIO, Docling, Cloudflare Tunnel; Docker Compose cho demo, `infra/` (Terraform, Ansible, Argo CD) cho K3s |
+| [`kubernetes/`](kubernetes/) | [git-platform](https://github.com/AI-Teaching-Assistant-PTIT/git-platform) | Hạ tầng: GitPTIT (Gitea tùy biến + Microsoft SSO), PostgreSQL/pgvector, SeaweedFS S3, Docling, Cloudflare Tunnel; Docker Compose cho demo, `infra/` (Terraform, Ansible, Argo CD) cho K3s |
 | [`config/`](config/) | [config-repo](https://github.com/AI-Teaching-Assistant-PTIT/config-repo) | GitOps source of truth: Helm values theo `<service>/<môi trường>`, được Argo CD đồng bộ xuống cluster |
 
 ```text
@@ -32,12 +32,16 @@ Nếu đã clone mà chưa có submodule:
 git submodule update --init --recursive
 ```
 
-Các image nằm trên GHCR ở chế độ private, nên cần đăng nhập bằng token có quyền `read:packages` trước khi pull:
+Các image ứng dụng của dự án nằm trên GHCR ở chế độ private, nên cần đăng nhập bằng token có quyền `read:packages` trước khi pull:
 
 ```bash
 gh auth refresh -h github.com -s read:packages
 gh auth token | docker login ghcr.io -u <github-user> --password-stdin
 ```
+
+Object storage dùng image công khai `chrislusf/seaweedfs:4.48`. Tên service `minio`, port S3 `9000`, tên bucket và các biến `MINIO_*` của backend được giữ để tương thích với image ứng dụng hiện có. Port `9001` là SeaweedFS Admin UI, đăng nhập bằng `S3_ACCESS_KEY` / `S3_SECRET_KEY`.
+
+Máy cài mới chạy `docker compose up --build`. Nếu đã có dữ liệu MinIO, thực hiện [hướng dẫn chuyển sang SeaweedFS](docs/seaweedfs-migration.md) trước khi cho ứng dụng ghi vào storage mới. SeaweedFS dùng volume mới `platform_seaweedfs_data`; volume MinIO cũ không được tái sử dụng hay tự xóa.
 
 Cách chạy từng phần xem trong README của repo tương ứng:
 

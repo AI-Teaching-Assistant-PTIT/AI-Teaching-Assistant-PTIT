@@ -70,23 +70,36 @@ services:
     networks:
       - platform_net
   minio:
-    image: quay.io/minio/minio:RELEASE.2025-04-22T22-12-26Z
+    # Keep the service name for existing S3 clients; the server is SeaweedFS.
+    image: chrislusf/seaweedfs:4.48
     container_name: minio
     restart: unless-stopped
-    command: server /data --console-address ":9001"
+    command:
+      - mini
+      - -dir=/data
+      - -ip=127.0.0.1
+      - -s3.port=9000
+      - -admin.port=9001
+      - -webdav=false
+      - -s3.port.iceberg=0
+      - -s3.port.lance=0
+      - -master.telemetry=false
+      - -bucket=course-knowledge,gitea-backup,postgres-backup,postgres-backups
     environment:
-      - MINIO_ROOT_USER=${S3_ACCESS_KEY}
-      - MINIO_ROOT_PASSWORD=${S3_SECRET_KEY}
+      - AWS_ACCESS_KEY_ID=${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
+      - AWS_SECRET_ACCESS_KEY=${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
+      - WEED_ADMIN_USER=${S3_ACCESS_KEY:?Set S3_ACCESS_KEY in .env}
+      - WEED_ADMIN_PASSWORD=${S3_SECRET_KEY:?Set S3_SECRET_KEY in .env}
       - TZ=Asia/Ho_Chi_Minh
     volumes:
-      - minio_data:/data
+      - seaweedfs_data:/data
     ports:
       - "9000:9000" # S3 API
-      - "9001:9001" # Web Console
+      - "9001:9001" # SeaweedFS Admin UI
     networks:
       - platform_net
     healthcheck:
-      test: ["CMD", "mc", "ready", "local"]
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://127.0.0.1:9000/healthz"]
       interval: 10s
       timeout: 5s
       retries: 12
@@ -347,7 +360,7 @@ services:
 volumes:
   gitptit_data:
   postgres_data:
-  minio_data:
+  seaweedfs_data:
   app-docling-cache:
 
 networks:
