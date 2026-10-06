@@ -1,0 +1,12 @@
+[submodule "config"]
+	path = config
+	url = git@github.com:AI-Teaching-Assistant-PTIT/config-repo.git
+	branch = main
+[submodule "kubernetes"]
+	path = kubernetes
+	url = git@github.com:AI-Teaching-Assistant-PTIT/git-platform.git
+	branch = main
+[submodule "web"]
+	path = web
+	url = git@github.com:AI-Teaching-Assistant-PTIT/codebase-platform.git
+	branch = main
