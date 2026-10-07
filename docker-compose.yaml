@@ -16,14 +16,14 @@ services:
     networks:
       - platform_net
   gitptit:
-    build: ./gitptit
+    build: ./kubernetes/gitptit
     image: ghcr.io/ai-teaching-assistant-ptit/gitptit:latest
     container_name: gitptit
     restart: unless-stopped
     depends_on:
       - postgres
     environment:
-      # Chỉ các giá trị theo môi trường; phần còn lại là ENV trong gitptit/Dockerfile.
+      # Chỉ các giá trị theo môi trường; phần còn lại là ENV trong kubernetes/gitptit/Dockerfile.
       - GITEA__server__DOMAIN
       - GITEA__server__ROOT_URL
       - GITEA__server__SSH_DOMAIN
@@ -66,7 +66,7 @@ services:
       start_period: 20s
     volumes:
       - postgres_data:/var/lib/postgresql/data
-      - ./postgres/init:/docker-entrypoint-initdb.d:ro
+      - ./kubernetes/postgres/init:/docker-entrypoint-initdb.d:ro
     networks:
       - platform_net
   minio:
@@ -349,7 +349,7 @@ services:
     ports:
       - "80:80"
     volumes:
-      - ./frontend/nginx-extra.conf:/etc/nginx/extra-conf.d/api.conf:ro
+      - ./kubernetes/frontend/nginx-extra.conf:/etc/nginx/extra-conf.d/api.conf:ro
     healthcheck:
       test: ["CMD-SHELL", "wget -q -O /dev/null http://127.0.0.1/"]
       interval: 10s
