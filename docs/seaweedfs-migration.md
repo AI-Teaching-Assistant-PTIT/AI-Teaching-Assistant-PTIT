@@ -14,7 +14,7 @@ Nguồn upstream: [SeaweedFS](https://github.com/seaweedfs/seaweedfs), [release 
 docker compose up --build
 ```
 
-S3: `http://localhost:9000`. Admin: `http://localhost:9001`, đăng nhập bằng `S3_ACCESS_KEY` / `S3_SECRET_KEY`. Compose phát triển trong `web/` dùng port host `9010` / `9011`.
+Compose tổng không publish port ra host. Trong mạng Docker, S3: `http://minio:9000`; Admin: `http://minio:9001`, đăng nhập bằng `S3_ACCESS_KEY` / `S3_SECRET_KEY`. Cloudflared cùng mạng Docker có thể dùng các endpoint này làm origin nếu cần truy cập qua tunnel. Compose phát triển trong `web/` dùng port host `9010` / `9011`.
 
 Volume mới là `platform_seaweedfs_data`, hoặc `<web-project>_app-seaweedfs-data` cho Compose của web. Volume/PVC MinIO có định dạng khác và không được mount vào SeaweedFS.
 

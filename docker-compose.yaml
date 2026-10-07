@@ -3,6 +3,7 @@
 # khởi động với dữ liệu RỖNG. Ghim ở đây để volume luôn là platform_* dù đổi thư mục.
 name: platform
 
+# Truy cập từ bên ngoài qua Cloudflare Tunnel; các service chỉ dùng platform_net.
 services:
   cloudflared:
     image: cloudflare/cloudflared:latest
@@ -42,8 +43,6 @@ services:
       - gitptit_data:/data
       - /etc/timezone:/etc/timezone:ro
       - /etc/localtime:/etc/localtime:ro
-    ports:
-      - "3000:3000"
     networks:
       - platform_net
 
@@ -92,9 +91,6 @@ services:
       - TZ=Asia/Ho_Chi_Minh
     volumes:
       - seaweedfs_data:/data
-    ports:
-      - "9000:9000" # S3 API
-      - "9001:9001" # SeaweedFS Admin UI
     networks:
       - platform_net
     healthcheck:
@@ -238,8 +234,6 @@ services:
       - GITEA_ORG
     env_file:
       - .env
-    ports:
-      - "8000:8000"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8000/api/v1/utils/health-check/"]
       interval: 10s
@@ -345,8 +339,6 @@ services:
         condition: service_healthy
     networks:
       - platform_net
-    ports:
-      - "80:80"
     volumes:
       - ./kubernetes/frontend/nginx-extra.conf:/etc/nginx/extra-conf.d/api.conf:ro
     healthcheck:

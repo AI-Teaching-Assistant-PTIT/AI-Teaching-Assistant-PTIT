@@ -43,6 +43,15 @@ Object storage dùng image công khai `chrislusf/seaweedfs:4.48`. Tên service `
 
 Máy cài mới chạy `docker compose up --build`. Nếu đã có dữ liệu MinIO, thực hiện [hướng dẫn chuyển sang SeaweedFS](docs/seaweedfs-migration.md) trước khi cho ứng dụng ghi vào storage mới. SeaweedFS dùng volume mới `platform_seaweedfs_data`; volume MinIO cũ không được tái sử dụng hay tự xóa.
 
+Compose tổng không publish port ra host. Cloudflared chạy cùng mạng `platform_net`; cấu hình origin của tunnel bằng tên service Docker, không dùng `localhost` hoặc IP máy host:
+
+| Dịch vụ | Origin trong Cloudflare Tunnel |
+|---|---|
+| Webapp (gồm `/api/` được Nginx proxy tới backend) | `http://frontend:80` |
+| GitPTIT | `http://gitptit:3000` |
+
+Backend và storage dùng endpoint nội bộ `http://api:8000`, `http://minio:9000` (S3), `http://minio:9001` (Admin UI). Nếu cần truy cập các dịch vụ này qua tunnel, cấu hình origin tương ứng.
+
 Cách chạy từng phần xem trong README của repo tương ứng:
 
 - Chạy demo cả stack bằng Docker Compose, hoặc triển khai lên K3s: [kubernetes/README.md](kubernetes/README.md)
