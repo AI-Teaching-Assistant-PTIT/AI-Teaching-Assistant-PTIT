@@ -332,7 +332,7 @@ services:
 
   frontend:
     container_name: frontend
-    image: ghcr.io/ai-teaching-assistant-ptit/frontend:2026-10-05T06-53-18-VN
+    image: ghcr.io/ai-teaching-assistant-ptit/frontend:2026-10-07T20-03-48-VN
     restart: always
     depends_on:
       api:
